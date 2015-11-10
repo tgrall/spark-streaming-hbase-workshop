@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Spark Streaming and HBase Workshop</title>
+
+    <!-- Bootstrap -->
+    <link href="./assets/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+      <script src="https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+
+
+    <div class="container">
+
+    <div class="jumbotron">
+      <h1>Spark Streaming and HBase Workshop</h1>
+      <p>Discover Spark, Spark Streaming and HBase to create a Time Series Application </p>
+      <p>In this activity you will build and run a Spark Streaming application. Spark Streaming programs are best run as standalone applications built using Maven or sbt. First we will load and inspect the data using the spark shell , then we will use Spark Streaming from the shell. This will make it easier to understand how to finish the  application code.
+      </p>
+
+    </div>
+
+
+
+    <h1>Setup</h1>
+	  <section id="installation">
+	      <h3>Installation</h3>
+
+      <p>
+        For this lab we will use <a href="https://www.mapr.com/products/mapr-sandbox-hadoop" target="_workshop">MapR Hadoop Sandbox</a> (Virtual Machine) or a MapR Cluster deployed on the cloud. The MapR cluster contains all the necessary components : Apache Spark and Apache HBase/MapR-DB.
+      </p>
+
+      <p>
+        <ol>
+          <li>Copy the <code>spark-streaming-hbase-workshop.zip</code> to your laptop<br/><br/></li>
+
+          <li>Copy the <code>spark-streaming-hbase-workshop.zip</code> to your Sandbox/Cluster home directory
+              <p>
+                <pre>scp spark-streaming-hbase-workshop.zip [username]@node-ip:/user/[username]/.  </pre>
+              </p>
+              <br/>
+          </li>
+
+          <li>Unzip <code>spark-streaming-hbase-workshop.zip</code> in your Sandbox/Cluster
+              <p>
+<pre>
+unzip spark-streaming-hbase-workshop.zip
+ls /user/[username]/spark-streaming-hbase-workshop/data
+</pre>
+              You should see the data files  (sensordata.csv … ).
+              </p>
+              <br/>
+          </li>
+
+          <li>Now unzip <code>spark-streaming-hbase-workshop.zip</code> on your laptop.<br/>
+            <p>
+              When you unzip the file spark-streaming-hbase-workshop.zip, it will create the following structure. <br/>
+              <img src="./assets/images/001.png" />
+            </p>
+            There is an exercises package with stubbed code for you to finish and there is a solutions package with the complete solution. Open/Import either project into your IDE following the instructions below. Optionally you can just edit the scala files and use maven on the command line, or if you just want to use the prebuilt solution, you can copy the solution jar file from the target directory.
+
+          </li>
+        </ol>
+      </p>
+
+      <h3>Download/Setup your IDE</h3>
+
+      <p>
+        You can use your choice of Netbeans, Intellij, Eclipse, or just a text editor with Apache Maven on the command line. You need to install your IDE of choice on your laptop, or alternatively install maven on the sandbox and use the command line.  If you use Netbeans or Intellij you only need to add the scala plugin, maven is included. If you use Eclipse, depending on the version, you may need to add the maven and scala plugins.
+      </p>
+
+      <ul>
+        <li>Netbeans:
+          <br/><a href="https://netbeans.org/downloads/">https://netbeans.org/downloads/</a>
+          <br/>click on tools plugins and add the scala plugin
+          <br/><br/>
+        </li>
+        <li>Eclipse with Scala and maven:
+          <br/><a href="http://scala-ide.org/download/sdk.html">http://scala-ide.org/download/sdk.html</a>
+          <br/><br/>
+      </li>
+      <li>IntelliJ:
+        <br/><a href="https://www.jetbrains.com/idea/download/">https://www.jetbrains.com/idea/download/</a>
+        <br/><br/>
+      </li>
+      <li>Maven (install on the sandbox, if you just want to edit the files on the sandbox)
+          <br/><a href="https://maven.apache.org/download.cgi">https://maven.apache.org/download.cgi</a>
+          <br/><br/>
+      </li>
+      </ul>
+
+
+	  </section>
+
+
+
+
+
+
+
+
+    <h1>Load and  Inspect data using the Spark Shell </h1>
+	  <section id="lab-01">
+
+        <div>
+          Log into your sandbox or cluster, with your userid and password mapr:
+          <code>ssh –p port user01@ipaddress </code>
+        </div>
+
+        <br/><br/>
+       <h4>Launch the Spark Interactive Shell</h4>
+
+       <div>
+         To launch the Interactive Shell, at the command line, run the following command:
+         <pre>/opt/mapr/spark/spark-[version]/bin/spark-shell</pre>
+         or
+         <pre>spark-shell</pre>
+       </div>
+
+       <br/><br/>
+       <h4>Load Data in Spark RDD</h4>
+
+       <div>
+         You can copy paste the code from below, it is also provided as a text file in the lab files <code>shellcommands</code> directory.<br/><br/>
+       </div>
+
+       <div>
+           First, we will import some packages and instantiate a sqlContext, which is the entry point for working with structured data (rows and columns) in Spark and allows the creation of DataFrame objects.
+<pre>
+//  SQLContext entry point for working with structured data
+val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+
+// this is used to implicitly convert an RDD to a DataFrame.
+import sqlContext.implicits._
+
+// Import Spark SQL data types and Row.
+import org.apache.spark.sql._
+import org.apache.spark.util.StatCounter
+</pre>
+       </div>
+
+      <div>
+        <br/><br/>
+        Below we load the data from the csv file into a Resilient Distributed Dataset (RDD). RDDs can have transformations and actions;  the <code>take(1)</code> action returns the first element in the RDD.
+
+<pre>
+// load the data into a  new RDD, replace user01 with the proper path
+val textRDD = sc.textFile("/user/user01/spark-streaming-hbase-workshop/data/sensordata.csv")
+
+// Return the first element in this RDD
+textRDD.take(1)
+</pre>
+      </div>
+
+     <br/><br/>
+     <h4>Transform the RDD into a new RDD</h4>
+
+      <div>
+          In the previous command you have loaded the CSV files into an RDD that contains simple string, an array of string.<br/><br/>
+
+          Spark, and Scala allow you to create Class and transform each line of the RDD into this class. The code below:
+
+          <ol>
+            <li>Create a new Scala class <code>Sensor</code><br/></li>
+            <li>Create a new function <code>parseSensor</code> that parse each line and create an instance of Sensor<br/></li>
+            <li>Then use the RDD created above and apply the <code>map()</code> transformation, that will be applied to each element of textRDD to create the RDD of sensor objects.<br/></li>
+          </ol>
+
+<pre>
+//define the schema using a case class
+case class Sensor(
+  resid: String,
+  date: String,
+  time: String,
+  hz: Double,
+  disp: Double,
+  flo: Double,
+  sedPPM: Double,
+  psi: Double,
+  chlPPM: Double
+)
+
+// function to parse line of sensor data into Sensor class
+def parseSensor(str: String): Sensor = {
+  val p = str.split(",")
+  Sensor(p(0), p(1), p(2), p(3).toDouble, p(4).toDouble, p(5).toDouble, p(6).toDouble, p(7).toDouble, p(8).toDouble)
+}
+
+// create an RDD of sensor objects
+val sensorRDD= textRDD.map(parseSensor)
+
+// The RDD first() action returns the first element in the RDD
+sensorRDD.take(1)
+</pre>
+
+       Take a look to the 2 RDDs you have in your context <code>textRDD</code> and <code>sensorRDD</code>. You should see some differences (class, type, ...)
+
+      </div>
+
+
+      <br/><br/>
+      <h4>Get some statistics from RDD</h4>
+
+      <div>
+        Now that you have RDD it is possible to use <code>actions</code> to get some values, or <code>transformations</code> to get new RDD.
+
+<pre>
+// Return the number of elements in the RDD
+sensorRDD.count()
+
+//  create an alert RDD for when psi is low
+val alertRDD = sensorRDD.filter(sensor => sensor.psi < 5.0)
+
+//  print some results
+alertRDD.take(3).foreach(println)
+</pre>
+
+    </div>
+
+    <div>
+      <br/><br/>
+      Let's now do some aggregation on the data, and get more statistics
+      <ol>
+        <li>
+          Create a new RDD, as key value that contains the sensor, date and PSI.
+        </li>
+        <li>
+          Group the values by sensor and date and get some stats using <a href="https://spark.apache.org/docs/1.4.1/api/scala/index.html#org.apache.spark.util.StatCounter" target="_workshop">StatCounter</a> class
+        </li>
+        <li>
+          Then print the 3 first values of the new stats RDD
+        </li>
+      </ol>
+<pre>
+// transform into an RDD of (key, values) to get daily stats for psi
+val keyValueRDD=sensorRDD.map(sensor => ((sensor.resid,sensor.date),sensor.psi))
+
+// print out some data
+keyValueRDD.take(3).foreach(kv => println(kv))
+
+// use StatCounter utility to get statistics for sensor psi
+val keyStatsRDD = keyValueRDD.groupByKey().mapValues(psi => StatCounter(psi))
+
+// print out some data
+keyStatsRDD.take(5).foreach(println)
+</pre>
+
+    </div>
+
+
+
+<br/><br/>
+<h5>Questions:</h5>
+
+<ul>
+  <li>
+    How many entries have a psi equals to 100?<br/><br/>
+    <div><button class="button" onclick="$('#lab01-sol-1').toggle();">Show/Hide Solution</button></div>
+    <div id="lab01-sol-1" style="display:none;" >
+    <pre>sensorRDD.filter(sensor => sensor.psi == 100.0).count()</pre>
+    </div>
+    <br/><br/>
+  </li>
+
+  <li>
+    List the statistics for the PSI per "sensor"<br/><br/>
+    <div><button class="button" onclick="$('#lab01-sol-2').toggle();">Show/Hide Solution</button></div>
+    <div id="lab01-sol-2" style="display:none;" >
+    <pre>sensorRDD.map(sensor => (sensor.resid,sensor.psi)).groupByKey().mapValues(psi => StatCounter(psi)).foreach(println)</pre>
+    </div>
+    <br/><br/>
+  </li>
+
+</ul>
+
+
+
+
+<h1>Analyze the data with DataFrame</h1>
+<section id="lab-02">
+
+    <div>
+      In this section you will continue to use the opened Spark Shell.<br/><br/>
+    </div>
+
+    <div>
+      A <a href="https://spark.apache.org/docs/latest/sql-programming-guide.html#dataframes" target="_workshop">DataFrame</a> is a distributed collection of data organized into named columns. Spark SQL supports automatically converting an RDD containing case classes to a DataFrame with the method <code>toDF()</code>.
+    </div>
+
+
+    <br/><br/>
+   <h4>Create DataFramces from existing RDD</h4>
+
+   <div>
+     In the following code you will use the <code>toDF()</code> method. The Sensor class will be use to define the DataFrame entries.
+<pre>
+  // change to a DataFrame
+  val sensorDF = sensorRDD.toDF()
+</pre>
+
+<br/><br/>
+<h5>Question:</h5>
+
+<ul>
+  <li>
+    How can you create the DataFrame directly from the CSV file? <br/><br/>
+    <div><button class="button" onclick="$('#lab02-sol-1').toggle();">Show/Hide Solution</button></div>
+    <div id="lab02-sol-1" style="display:none;" >
+    <pre>val sensorDF= sc.textFile("/user/user01/spark-streaming-hbase-workshop/data/sensordata.csv").map(parseSensor).toDF()</pre>
+    </div>
+    <br/><br/>
+  </li>
+</ul>
+   </div>
+
+
+   <h4>Explore the data set with queries</h4>
+
+   <div>
+     DataFrames API is part of the Spark SQL component. This allows you to execute complex queries on your dataset. In the following section you will use various queries to explore the sensor dataset.
+     <br/><br/>
+   </div>
+
+<pre>
+// group by the sensorid, date get average psi
+sensorDF.groupBy("resid", "date").agg(avg(sensorDF("psi"))).take(5).foreach(println)
+
+// register as a temp table then you can query
+sensorDF.registerTempTable("sensor")
+
+// get the max , min, avg  for each column
+val sensorStatDF = sqlContext.sql("SELECT resid, date,MAX(hz) as maxhz, min(hz) as minhz, avg(hz) as avghz, MAX(disp) as maxdisp, min(disp) as mindisp, avg(disp) as avgdisp, MAX(flo) as maxflo, min(flo) as minflo, avg(flo) as avgflo,MAX(sedPPM) as maxsedPPM, min(sedPPM) as minsedPPM, avg(sedPPM) as avgsedPPM, MAX(psi) as maxpsi, min(psi) as minpsi, avg(psi) as avgpsi,MAX(chlPPM) as maxchlPPM, min(chlPPM) as minchlPPM, avg(chlPPM) as avgchlPPM FROM sensor GROUP BY resid,date")
+
+// print out the results
+sensorStatDF.take(5).foreach(println)
+</pre>
+<div>
+  <br/><br/>
+  The following code extract the first PSI value of the <code>sensorDF</code>
+  <pre>sensorDF.select("psi").take(1)</pre>
+<div>
+
+
+  <br/><br/>
+  <h5>Questions:</h5>
+
+  <ul>
+    <li>
+      How can I ge tthe list of all sensor? (field <code>resid</code> - tips: apply distinct on select statement) <br/><br/>
+      <div><button class="button" onclick="$('#lab02-sol-2').toggle();">Show/Hide Solution</button></div>
+      <div id="lab02-sol-2" style="display:none;" >
+      <pre>sensorDF.select("resid").distinct.foreach(println)</pre>
+      or
+      <pre>sqlContext.sql("SELECT DISTINCT(resid) FROM sensor").foreach(println)</pre>
+      </div>
+      <br/><br/>
+    </li>
+  </ul>
+
+
+  <br/><br/>
+  <h4>Summary</h4>
+  <div>
+    In this section you have learn how to use the Spark Shell and API to read a CSV file, and create RDDs from String or Classes, and finally use the DataFrame and SparkSQL API to analyze the data.
+
+    <br/><br/>
+    In the next section you will use the same data source but use the Streaming API.
+
+  </div>
+
+
+</section>
+
+
+<h1>Use Spark Streaming with the Spark Shell</h1>
+<section id="lab-03">
+      <div>
+        <p>
+          For this example, the streaming API will use the <b>File Streams</b>, this means that the Spark application will capture automatically any new file as datasource.
+        </p>
+
+
+        <p>
+          Spark Streaming supports data sources such as Directories, HDFS directories, TCP sockets, Kafka, Flume, Twitter, etc. Data Streams can be processed with Spark’s core APIS, DataFrames SQL, or machine learning APIs, and can be persisted to a filesystem, HDFS, databases, or any data source offering a Hadoop OutputFormat.
+          <br/>
+          <img src="./assets/images/009.png"/>
+        </p>
+
+        <p>
+          Depending of your application you will chose the source. In this example we can imagine that the various sensor are pushing new files in a directory, and each time the application will capture it automatically.
+        </p>
+
+
+      </div>
+
+      <div>
+        First create a directory that the streaming application will read from at the linux command line type:
+        <pre>mkdir stream</pre>
+        <br/><br/>
+      </div>
+
+      <h4>Launch the Spark Interactive Shell</h4>
+
+      <div>
+        To launch the Interactive Shell for streaming, at the command line, run the following command, we need 2 threads for streaming:
+        <pre>spark-shell --master local[2]</pre>
+        <br/><br/>
+      </div>
+
+      <div>
+        You can copy paste the code from below, it is also provided as a text file in the lab files shell commands directory.
+        <br/><br/>
+      </div>
+
+      <div>
+        First, we will import some packages related to SparkStreaming library.
+      </div>
+<pre>
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+import StreamingContext._
+</pre>
+
+<br/>
+<br/>
+  <ol>
+    <li>
+      We create the class Sensor that will be used later on. (same as before)
+    </li>
+    <li>We create a <a href="http://spark.apache.org/docs/latest/api/scala/index.html#org.apache.spark.streaming.StreamingContext" target="+workshop">StreamingContext</a>, the main entry point for streaming functionality, with <a href="http://spark.apache.org/docs/latest/streaming-programming-guide.html#setting-the-right-batch-interval" target="_workshop">a 2 seconds batch interval</a>.
+    </li>
+    <li>
+      Next, we use the StreamingContext textFileStream(directory) method to create an input stream
+    </li>
+  </ol>
+
+<pre>
+case class Sensor(
+  resid: String,
+  date: String,
+  time: String,
+  hz: Double,
+  disp: Double,
+  flo: Double,
+  sedPPM: Double,
+  psi: Double,
+  chlPPM: Double
+  ) extends Serializable
+
+val ssc = new StreamingContext(sc, Seconds(2))
+
+val linesDStream = ssc.textFileStream("/user/user01/stream")
+
+linesDStream.print()
+</pre>
+
+
+<div>
+  The linesDStream represents the stream of data, each record is a line of text. Internally a DStream is a sequence of RDDs, one RDD per batch interval.
+
+  <img src="./assets/images/002.png" />
+
+</div>
+
+  <div>
+    <br/><br/>
+    Next we use the <a href="https://spark.apache.org/docs/latest/api/java/org/apache/spark/streaming/dstream/DStream.html" target="_workshop">DStream</a> foreachRDD method to apply processing to each RDD in this DStream.
+  </div>
+<pre>
+// for each RDD. performs function on each RDD in DStream
+linesDStream.foreachRDD(rdd=>{
+   val sensorDStream = rdd.map(_.split(",")).map(
+      p => Sensor(
+        p(0),
+        p(1),
+        p(2),
+        p(3).toDouble,
+        p(4).toDouble,
+        p(5).toDouble,
+        p(6).toDouble,
+        p(7).toDouble,
+        p(8).toDouble)
+   )
+
+   sensorDStream.take(2).foreach(println)
+})
+</pre>
+
+    <div>
+      The map operation applied on each entry to create a new Sensor object.
+      <br/>
+      <img src="./assets/images/003.png" />
+    </div>
+
+
+
+    <br/><br/>
+    <h5>Start Receiving Data</h5>
+    <div>
+      To start receiving data, we must explicitly call start() on the StreamingContext, then call awaitTermination to wait for the streaming computation to finish.
+
+    </div>
+<pre>
+// Start the computation
+ssc.start()
+
+// Wait for the computation to terminate
+ssc.awaitTermination()
+</pre>
+
+
+    <br/><br/>
+    <h4>Save data that will be captured by Spark</h4>
+    <div>
+      Using another terminal window login into your sandbox or cluster:
+      <pre>ssh –p port user01@ipaddress</pre>
+    </div>
+
+    <div>
+      <br/><br/>
+      Copy the <code>sensordata.csv</code> file from the streaminglab/data directory to the stream directory (the directory that the streaming application will read from) at the linux command line type:
+      <pre>cp  ~/spark-streaming-hbase-workshop/data/sensordata.csv stream/.</pre>
+    </div>
+
+    <div>
+      <br/>
+      The window with the shell should print out information about parsing the data.
+    </div>
+
+
+    <br/><br/>
+    <h4>Observe Streaming Application in Web UI</h4>
+    <div>
+      Launch the Spark Streaming UI  in the browser with you sandbox or cluster ipaddress and port 4040:
+      <ul>
+        <li>http://ipaddress:4040</li>
+        <li>Click on the Streaming tab. </li>
+      </ul>
+    </div>
+
+
+
+    <br/><br/>
+    <h4>Summary</h4>
+    <div>
+      In this section, you have learned how to use the Spark Streaming API. Using the Spark Shell the application capture each new file in the <code>[userid]/stream</code> folder and create a new RDD based on the Sensor class.
+      <br/><br/>
+      You have also learned how to use the Spark Web UI to observe your streaming application.
+    </div>
+
+
+
+
+</section>
+
+<br/><br/>
+<h1>Build and Run a Spark Streaming application</h1>
+<section id="lab-04">
+
+  <br/>
+  <h4>Open/Import the Project into your IDE</h4>
+  <div>
+    Here are some links for opening or importing a maven project with your IDE:
+    <ul>
+      <li>Netbeans
+        <br/>
+        <a href="http://wiki.netbeans.org/MavenBestPractices#Open_existing_project
+" target="_workshop">http://wiki.netbeans.org/MavenBestPractices#Open_existing_project</a>
+      </li>
+      <li>Intellij
+        <br/>
+        <a href="http://www.tutorialspoint.com/maven/maven_intellij_idea.htm" target="_workshop">
+        http://www.tutorialspoint.com/maven/maven_intellij_idea.htm
+        </a>
+      </li>
+      <li>Eclipse
+        <br/>
+        <a href="http://scala-ide.org/docs/current-user-doc/gettingstarted/index.html" target="_workshop">
+          http://scala-ide.org/docs/current-user-doc/gettingstarted/index.html
+        </a>
+      </li>
+  </ul>
+
+  Import the sparkstreaminglab project into your IDE. Open the SensorStream.scala file.
+  <br/><br/>
+  In this lab you will <b>finish the code</b> for the SensorStream class following the <code>//TODO</code> comments in the code.
+  <br/>First lets go over the Solution code.
+  </div>
+
+  <br/><br/>
+  <h3>Solution Code Overview</h3>
+
+  <div>
+    The first part of the code is very similar to the code you have written in the previous lab, except that now you will write it in the context of an application: A Scala Class with a main function.  (This could also be a Java Class.)
+  </div>
+
+
+
+  <br/><br/>
+  <h4>Initializing the StreamingContext</h4>
+  <div>
+    Look at the <code>SensorStream.main()</code> method.
+    <ul>
+      <li>
+        Since you are now in an application you have to explicitly create a <code>SparkConf</code>. In the Spark Shell the SparkConf is created automatically.
+      </li>
+      <li>
+        And use this to create a StreamingContext, the main entry point for streaming functionality, with a 2 second batch interval.
+      </li>
+    </ul>
+<pre>
+val sparkConf = new SparkConf().setAppName("Stream")
+
+//  create a StreamingContext, the main entry point for all streaming functionality
+val ssc = new StreamingContext(sparkConf, Seconds(2))
+</pre>
+
+  </div>
+
+  <div>
+    <br/><br/>
+    Next, we use the <code>StreamingContext.textFileStream(directory)</code> method to create an input stream that monitors a Hadoop-compatible file system for new files and processes any files created in that directory.
+    <br/>
+    This ingestion type supports a workflow where new files are written to a landing directory and Spark Streaming is used to detect them, ingest them, and process the data. Only use this ingestion type with files that are moved or copied into a directory.
+  </div>
+<pre>
+// create a DStream that represents streaming data from a directory  source
+val linesDStream = ssc.textFileStream("/user/user01/stream")
+</pre>
+
+<div>
+  <br/>
+  Here you are in the first step where the Streaming application create RDD from file.
+  <br/>
+  <img src="./assets/images/002.png"/>
+</div>
+
+
+<div>
+  <br/><br/>
+  <h5>Apply Transformations and output operations to DStreams</h5>
+  Next we parse the lines of data into Sensor objects, with the map operation on the linesDstream.
+</div>
+<pre>
+// parse each line of data in linesDStream  into sensor objects
+val sensorDStream = linesDStream.map(parseSensor)
+</pre>
+
+<div>
+<br/>
+Here you should use the parseSensor (or equivalent) to transform the dataset into  a new RDD
+<br/>
+<img src="./assets/images/003.png"/>
+</div>
+
+
+<div>
+  <br/><br/>
+  <h5>Save Alerts into a file</h5>
+  In this application you want to save all the entries where the PSI is lower than 5.0 into a new file.
+  <ul>
+    <li>
+      Read each RDD, using a <code>foreach</code>
+    </li>
+    <li>
+      Create a new RDD using a <code>filter</code>, as we have done in the first lab
+    </li>
+    <li>
+      Save the alerts into a file using the </code><a href="http://spark.apache.org/docs/latest/programming-guide.html#actions" target="_workshop">RDD.saveAsText()</a></code> method
+    </li>
+  </ul>
+</div>
+<pre>
+// for each RDD. performs function on each RDD in DStream
+sensorRDD.foreachRDD { rdd =>
+
+  // filter sensor data for low psi
+  val alertRDD = rdd.filter(sensor => sensor.psi < 5.0)
+
+  alertRDD.saveAsTextFile("/user/user01/alertout")
+}
+</pre>
+
+  <div>
+    <br/><br/>
+    <b>Finish the code</b> for the <code>SensorStream</code> class following the <code>//TODO</code> comments.
+
+    <br/><br/>
+    Note: You can find the complete solutions and more examples in the <code>solutions</code> package.
+  </div>
+
+
+  <br/><br/>
+  <h3>Build and Run the Project</h3>
+  <div>
+    Here is how you build a maven project with your IDE or Maven:
+    <ul>
+      <li>Netbeans : Right mouse click on the project and select build</li>
+      <li>Intellij : Select Buid menu > Rebuild Project Option</li>
+      <li>Eclipse : Right mouse click on the project and select run as maven install.</li>
+      <li>Maven : run the command <code>mvn clean package</code></li>
+    </ul>
+    Building will create the sparkstreaminglab-1.0.jar in the target folder. You  copy this jar file to your sandbox or cluster node to run your application.
+  </div>
+
+  <br/>
+  <h4>Run the Project</h4>
+  <div>
+    <ol>
+      <li>Copy the jar file to you sandbox or cluster, if you are using a cluster, replace user01 with your username:
+        <pre>scp  sparkstreaminglab-1.0.jar user01@ipaddress:/user/user01/. </pre>
+        <br/><br/>
+      </li>
+      <li>
+        In your sandbox/cluster terminal window run the streaming app, using the <code>spark-submit</code> command.<br/>
+         Spark Submit Format:
+         <pre>spark-submit --driver-class-path `hbase classpath` --class package.class applicationjarname.jar </pre>
+         Note that we are adding here the Hbase client to the class path using the Hbase command <code>hbase classpath</code>
+
+         <br/><br/>
+         If you are running the solution replace the exercises package name with solutions. For more information on Spark Submit look at the <a href="http://spark.apache.org/docs/latest/submitting-applications.html" target="_workshop">Documentation</a>.
+         <br/><br/>
+         The command to run your application is:
+         <pre>spark-submit --driver-class-path `hbase classpath`  --class exercises.SensorStream sparkstreaminglab-1.0.jar </pre>
+
+         Note: if you want to run the solution just use the class <code>solutions.SensorStream</code>
+         <br/><br/>
+      </li>
+      <li>In another terminal window copy the streaming data file to the stream directory:
+        <pre>cp sensordata.csv  /user/user01/stream/new1.csv</pre>
+
+        <br/><br/>
+        When you run the streaming application again, either remove the files from the stream directory with <code>rm stream/*</code>  , or give the file a new name when you copy it   cp sensordata.csv  /user/user01/stream/new2.csv .
+        <br/>The Streaming receiver will only read new files copied after you start your application.         <br/><br/>
+        Launch the Spark Web UI in your browser.  <code>http://ip-address:4040</code>
+        <br/>
+        <img src="./assets/images/004.png"  />
+        <br/><br/>
+
+
+      </li>
+    </ol>
+  </div>
+
+
+</section>
+
+
+<br/><br/>
+<h1>Build and Run a Streaming Application which Writes to HBase </h1>
+<section id="lab-04">
+
+  <br/>
+  <div>
+    In this lab you will finish the code for the <code>exercises.HBaseSensorStream</code> class following the <code>//TODO</code> comments in the code.
+    <br/>First let’s go over the Solution code.
+  </div>
+
+  <h4>Solution Code Overview</h4>
+
+  <div>
+    <h5>HBase Table schema</h5>
+
+    The HBase Table Schema for the streaming data is as follows:
+    <ul>
+      <li>Composite row key of the pump name date and time stamp</li>
+      <li>Column Family data with columns corresponding to the input data fields</li>
+      <li>Column Family alerts with columns  corresponding to any filters for alarming values</li>
+      <li>Note that the data and alert column families could be set to expire values after a certain amount of time.</li>
+    </ul>
+    The Schema for the daily statistics summary rollups is as follows:
+    <ul>
+      <li>Composite row key of the pump name and date</li>
+      <li>Column Family stats</li>
+      <li>Columns for min, max, avg.</li>
+    </ul>
+
+    <img src="./assets/images/005.png" />
+  </div>
+
+
+  <div>
+    <br/>
+    <h5>Saving Sensor data into HBase</h5>
+
+    The function below converts a Sensor object into an HBase Put object, which is used to insert a row into HBase.
+<pre>
+val cfDataBytes = Bytes.toBytes("data")
+object Sensor {
+
+. . .
+
+//  Convert a row of sensor object data to an HBase put object
+def convertToPut(sensor: Sensor): (ImmutableBytesWritable, Put) = {
+  val dateTime = sensor.date + " " + sensor.time
+
+  // create a composite row key: sensorid_date time
+  val rowkey = sensor.resid + "_" + dateTime
+  val put = new Put(Bytes.toBytes(rowkey))
+
+  // add to column family data, column  data values to put object
+  put.add(cfDataBytes, Bytes.toBytes("hz"), Bytes.toBytes(sensor.hz))
+  put.add(cfDataBytes, Bytes.toBytes("disp"), Bytes.toBytes(sensor.disp))
+  put.add(cfDataBytes, Bytes.toBytes("flo"), Bytes.toBytes(sensor.flo))
+  put.add(cfDataBytes, Bytes.toBytes("sedPPM"), Bytes.toBytes(sensor.sedPPM))
+  put.add(cfDataBytes, Bytes.toBytes("psi"), Bytes.toBytes(sensor.psi))
+  put.add(cfDataBytes, Bytes.toBytes("chlPPM"), Bytes.toBytes(sensor.chlPPM))
+  return (new ImmutableBytesWritable(Bytes.toBytes(rowkey)), put)
+  }
+}
+</pre>
+
+  <br/>Note: You will have to create an AlertPut using the same approach to save PSI Alerts.
+  </div>
+
+  <div>
+    <br/>
+    <h5>Configuration for Writing to an HBase Table</h5>
+
+    You can use the <a href="https://hbase.apache.org/apidocs/org/apache/hadoop/hbase/mapreduce/TableOutputFormat.html" target="_workshop">TableOutputFormat</a>  class with Spark to write to an HBase table, similar to how you would write to an HBase table from MapReduce. Below we set up the configuration for writing to HBase using the TableOutputFormat class.
+
+<pre>
+val tableName = "sensor"
+
+// set up Hadoop HBase configuration using TableOutputFormat
+val conf = HBaseConfiguration.create()
+
+conf.set(TableOutputFormat.OUTPUT_TABLE, tableName)
+
+val jobConfig: jobConfig = new JobConf(conf, this.getClass)
+
+jobConfig.setOutputFormat(classOf[TableOutputFormat])
+
+jobConfig.set(TableOutputFormat.OUTPUT_TABLE, tableName)
+
+</pre>
+
+  <br/>Below we use  the PairRDDFunctions saveAsHadoopDataset method, which outputs the RDD to any Hadoop-supported storage system using a Hadoop Configuration object for that storage system (see Hadoop Configuration for HBase above).
+
+<pre>
+// for each RDD. performs function on each RDD in DStream
+sensorRDD.foreachRDD { rdd =>
+  // filter sensor data for low psi
+  val alertRDD = rdd.filter(sensor => sensor.psi < 5.0)
+
+  // convert sensor data to put object and write to HBase  Table CF data
+  rdd.map(Sensor.convertToPut).saveAsHadoopDataset(jobConfig)
+
+  // convert alert to put object write to HBase  Table CF alerts
+  rdd.map(Sensor.convertToPutAlert).saveAsHadoopDataset(jobConfig)
+}
+</pre>
+
+  </div>
+
+
+  <div>
+    <br/>
+    <h5>Overview</h5>
+    The sensorRDD objects are converted to put objects then written to HBase.
+
+    <br/>
+    <img src="./assets/images/006.png" />
+
+  </div>
+
+
+
+  <br/><br/>
+  <h3>Running the Application: Stream data in Hbase</h3>
+  <div>
+    <p>Take a look at the code in the solutions package.  If you have time finish the HBaseSensorStream class code in the exercises package, or just run the code in the solutions package.</p>
+
+    <p>
+      Before running your application you must create the <b>HBase Table</b>.
+
+      <ol>
+        <li>
+          In your cluster terminal run the HBase Shell
+          <pre>hbase shell</pre>
+          <br/>
+        </li>
+        <li>
+          In the shell issue the following command to create the sensor table with the data, alert and stats column families (if you are working on a cluster, change user01 to your user):
+          <pre>create '/user/user01/sensor', {NAME=>'data'}, {NAME=>'alert'}, {NAME=>'stats'}</pre>
+          <br/>
+        </li>
+        <li>
+          Remove the files from the stream directory with <code>rm stream/*</code>  .The Streaming receiver will only read new files copied after you start your application.
+          <br/><br/>
+        </li>
+        <li>Run the HBaseSensorStream class. When running the solution code, remember to change the package name.
+          <pre>spark-submit --driver-class-path `hbase classpath`  --class exercises.HBaseSensorStream sparkstreaminglab-1.0.jar</pre>
+          <br/>
+        </li>
+        <li>
+          In another terminal window copy the streaming data file to the stream directory:
+          <pre>cp sensordata.csv  /user/user01/stream/new2.csv</pre>
+          <br/>
+          When you run the streaming application again, either remove the files from the stream directory with rm stream/*  , or give the file a new name when you copy it   cp sensordata.csv  /user/user01/stream/new2.csv .  The Streaming receiver will only read new files copied after you start your application.
+          <br/><br/>
+        </li>
+        <li>
+          Scan the data written to HBase, launch the hbase shell:
+<pre>
+hbase shell
+
+scan '/user/user01/sensor',  {COLUMNS=>['data'],  LIMIT => 10}
+
+scan '/user/user01/sensor',  {COLUMNS=>['alert'],  LIMIT => 10 }
+</pre>
+          <br/>
+        </li>
+      </ol>
+    </p>
+  </div>
+
+
+
+  <br/><br/>
+  <h3>Adding Statistics</h3>
+  <div>
+    <p>Your application now insert data into HBase: all metrics and some alerts for PSI.</p>
+    <p>
+      Now we want to read the HBase sensor table data , calculate daily summary statistics and write these statistics to the stats column family.
+      <br/>
+      <img src="./assets/images/007.png" />
+    </p>
+
+    <p>
+      The code below reads the HBase table sensor table psi column data, calculates statistics on this data using StatCounter, then writes the statistics to the sensor stats column family.
+<pre>
+// configure HBase for reading
+val conf = HBaseConfiguration.create()
+conf.set(TableInputFormat.INPUT_TABLE, HBaseSensorStream.tableName)
+
+// scan data column family psi column
+conf.set(TableInputFormat.SCAN_COLUMNS, "data:psi")
+
+// Load an RDD of (row key, row Result) tuples from the table
+val hBaseRDD = sc.newAPIHadoopRDD(
+    conf,
+    classOf[TableInputFormat],
+    classOf[org.apache.hadoop.hbase.io.ImmutableBytesWritable],
+    classOf[org.apache.hadoop.hbase.client.Result]
+    )
+
+// transform (row key, row Result) tuples into an RDD of Results
+val resultRDD = hBaseRDD.map(tuple => tuple._2)
+
+// transform into an RDD of (RowKey, ColumnValue)s , with Time removed from row key
+val keyValueRDD = resultRDD.
+          map(result => (Bytes.toString(result.getRow()).
+          split(" ")(0), Bytes.toDouble(result.value)))
+
+// group by rowkey , get statistics for column value
+val keyStatsRDD = keyValueRDD.
+         groupByKey().
+         mapValues(list => StatCounter(list))
+
+// convert rowkey, stats to put and write to hbase table stats column family
+keyStatsRDD.map { case (k, v) => convertToPut(k, v) }.saveAsHadoopDataset(jobConfig)
+</pre>
+    </p>
+
+    <p>
+      The diagram below shows that the output from newAPIHadoopRDD is an RDD of row key, result pairs. The PairRDDFunctions saveAsHadoopDataset saves the Put objects to HBase.
+      <br/>
+      <img src="./assets/images/008.png"  />
+    </p>
+
+  </div>
+
+
+  <br/><br/>
+  <h3>Running the Application: Calculate Statistics</h3>
+  <div>
+    <p>
+      Same as earlier, you have to build your project and deploy it on your cluster. Once done you can run the following commands:
+
+      <ol>
+        <li>
+          Read data and calculate stats for one column
+          <pre>spark-submit --driver-class-path `hbase classpath`   --class exercises.HBaseReadWrite sparkstreaminglab-1.0.jar</pre>
+          <br/>
+        </li>
+        <li>
+          Calculate stats for whole row
+          <pre>spark-submit --driver-class-path `hbase classpath` --class exercises.HBaseReadRowWriteStats sparkstreaminglab-1.0.jar</pre>
+          <br/>
+        </li>
+        <li>
+          Launch the  hbase shell and scan for statistics
+          <pre>scan '/user/user01/sensor',  {COLUMNS=>['stats']}</pre>
+          <br/>
+        </li>
+      </ol>
+
+    </p>
+  </div>
+
+
+</section>
+
+
+<br/><br/>
+<h1>Conclusion</h1>
+<section id="lab-05">
+
+  <br/>
+  <div>
+    In this workshop you have learned how to:
+    <ul>
+      <li>use Apache Spark to digest CSV data</li>
+      <li>use DataFrame to do advanced queries on these data</li>
+      <li>use Spark Streaming to stream files into the system automatically</li>
+      <li>save data parsed using Spark into Apache Hbase</li>
+      <li>read, process data out of Hbase and save new values back into Hbase</li>
+    </ul>
+
+    <p>
+      This workshop is a simple introduction to Time Series application showing how to capture "sensor data", in this case coming from files, then save and process these data. If you want to learn more about Time Series you can look at the <a href="https://www.mapr.com/time-series-databases-new-ways-store-and-access-data" target="_workshop">ebook</a>
+    </p>
+
+
+    <p>
+      If you want learn more about Apache Spark, HBase, register for the free online training at <a href="http://learn.mapr.com" target="_workshop">http://learn.mapr.com</a>, read the <a href="https://www.mapr.com/getting-started-apache-spark" target="_workshop">online Spark eBook</a>
+    </p>
+
+  <div/>
+
+</section>
+
+
+</div>
+
+
+
+
+    <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+    <script src="assets/js//jquery.min.js"></script>
+    <!-- Include all compiled plugins (below), or include individual files as needed -->
+    <script src="assets/js/bootstrap.min.js"></script>
+  </body>
+</html>
